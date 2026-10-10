@@ -140,15 +140,21 @@
     },
     "wizard": {
       "title": "Quick Add Wizard",
-      "description": "Select a provider and enter API Key to quickly add a model.",
+      "description": "Select a provider and enter API Key to quickly add models.",
       "provider": "Provider",
       "selectProvider": "Select Provider",
       "getApiKey": "Get API Key",
       "verify": "Verify Key & Get Models",
-      "selectModel": "Select Model",
+      "selectModels": "Select Models",
+      "searchModels": "Search models…",
+      "selectAll": "Select all",
+      "selectedCount": "None selected | 1 model selected | {count} models selected",
+      "noModelResults": "No models found",
       "finish": "Finish",
       "verifySuccess": "Successfully retrieved model list",
-      "verifyFail": "Failed to retrieve models"
+      "verifyFail": "Failed to retrieve models",
+      "added": "{count} model added | {count} models added",
+      "skipped": "{count} model skipped (already exists) | {count} models skipped (already exist)"
     }
   },
   "menu": {

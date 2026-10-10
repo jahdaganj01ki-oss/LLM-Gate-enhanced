@@ -31,8 +31,8 @@ const filteredModels = computed(() => {
   )
 })
 
-// Highlight newly created model
-const newlyCreatedId = ref<string | null>(null)
+// Highlight newly created models
+const newlyCreatedIds = ref<Set<string>>(new Set())
 
 // Add new model
 const handleAddModel = () => {
@@ -43,7 +43,7 @@ const handleAddModel = () => {
     baseUrl: '',
     apiKey: ''
   })
-  newlyCreatedId.value = id
+  newlyCreatedIds.value = new Set([id])
   // Clear search to ensure new model is visible
   searchQuery.value = ''
 }
@@ -58,7 +58,14 @@ const handleCopyModel = (id: string) => {
     ...original,
     id: newId
   })
-  newlyCreatedId.value = newId
+  newlyCreatedIds.value = new Set([newId])
+  searchQuery.value = ''
+}
+
+// Models created via the quick add wizard
+const handleWizardAdded = (ids: string[]) => {
+  newlyCreatedIds.value = new Set(ids)
+  // Clear search to ensure new models are visible
   searchQuery.value = ''
 }
 
@@ -97,7 +104,7 @@ const handleDeleteModel = (id: string) => {
         </div>
       </div>
       <div class="flex gap-2">
-        <ModelWizardDialog />
+        <ModelWizardDialog @added="handleWizardAdded" />
         <Button @click="handleAddModel">
           <Plus />
           {{ t('models.add') }}
@@ -120,7 +127,7 @@ const handleDeleteModel = (id: string) => {
     <div v-if="filteredModels.length > 0" class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
       <TransitionGroup name="list">
 
-        <ModelCard v-for="model in filteredModels" :key="model.id" :model="model" :is-new="model.id === newlyCreatedId"
+        <ModelCard v-for="model in filteredModels" :key="model.id" :model="model" :is-new="newlyCreatedIds.has(model.id)"
           @delete="handleDeleteModel" @copy="handleCopyModel" />
       </TransitionGroup>
     </div>

@@ -145,10 +145,16 @@
       "selectProvider": "选择提供商",
       "getApiKey": "获取 API Key",
       "verify": "校验 Key 并获取模型列表",
-      "selectModel": "选择模型",
+      "selectModels": "选择模型",
+      "searchModels": "搜索模型…",
+      "selectAll": "全选",
+      "selectedCount": "未选择 | 已选 1 个模型 | 已选 {count} 个模型",
+      "noModelResults": "未找到匹配的模型",
       "finish": "完成",
       "verifySuccess": "成功获取模型列表",
-      "verifyFail": "获取模型列表失败"
+      "verifyFail": "获取模型列表失败",
+      "added": "已添加 {count} 个模型",
+      "skipped": "已跳过 {count} 个已存在的模型"
     }
   },
   "menu": {

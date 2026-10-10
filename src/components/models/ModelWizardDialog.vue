@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { nanoid } from 'nanoid'
 import { useModelConfigStore } from '@/stores/models'
 import { useProxyStore } from '@/stores/proxy'
@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Wand2, Loader2, ExternalLink, ShieldCheck, Cloud, Key, Box } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
@@ -32,22 +33,70 @@ const { t } = useI18n()
 const modelStore = useModelConfigStore()
 const proxyStore = useProxyStore()
 
+const emit = defineEmits<{
+  added: [ids: string[]]
+}>()
+
 const isOpen = ref(false)
 const isLoading = ref(false)
 const models = ref<string[]>([])
 const provider = ref('')
 const apiKey = ref('')
-const selectedModel = ref('')
+const selectedModels = ref<Set<string>>(new Set())
+const modelFilter = ref('')
 const currentId = ref('')
+
+// Models filtered by the search box
+const filteredModels = computed(() => {
+  const query = modelFilter.value.trim().toLowerCase()
+  if (!query) return models.value
+  return models.value.filter(m => m.toLowerCase().includes(query))
+})
+
+const selectedCount = computed(() => selectedModels.value.size)
+
+// Whether every currently visible (filtered) model is selected
+const allFilteredSelected = computed(
+  () => filteredModels.value.length > 0 && filteredModels.value.every(m => selectedModels.value.has(m))
+)
+
+const toggleModel = (name: string, checked: boolean) => {
+  if (checked) {
+    selectedModels.value.add(name)
+  } else {
+    selectedModels.value.delete(name)
+  }
+}
+
+const onModelToggle = (name: string, value: boolean | 'indeterminate') => {
+  if (value !== 'indeterminate') toggleModel(name, value)
+}
+
+const toggleSelectAll = (value: boolean | 'indeterminate') => {
+  if (value === 'indeterminate') return
+  for (const m of filteredModels.value) {
+    toggleModel(m, value)
+  }
+}
 
 watch(isOpen, (newVal) => {
   if (newVal) {
     currentId.value = nanoid(6)
     provider.value = ''
     apiKey.value = ''
-    selectedModel.value = ''
+    selectedModels.value = new Set()
+    modelFilter.value = ''
     models.value = []
+  } else if (modelStore.getById(currentId.value)) {
+    // Remove leftover temp config when the wizard is closed/cancelled
+    modelStore.removeConfig(currentId.value)
   }
+})
+
+// A fetched model list belongs to one provider only - discard it on provider change
+watch(provider, () => {
+  models.value = []
+  selectedModels.value = new Set()
 })
 
 const handleVerify = async () => {
@@ -94,13 +143,18 @@ const handleVerify = async () => {
     const data = await response.json()
     // Handle OpenAI format { data: [{ id: '...' }, ...] }
     if (data.data && Array.isArray(data.data)) {
-      models.value = data.data.map((m: { id: string }) => m.id)
+      const ids = (data.data as { id: string }[]).map(m => m.id)
+      models.value = [...new Set(ids)]
+      selectedModels.value = new Set()
+      modelFilter.value = ''
       toast.success(t('models.wizard.verifySuccess'))
     } else {
       throw new Error('Invalid response format')
     }
   } catch (e) {
     console.error(e)
+    models.value = []
+    selectedModels.value = new Set()
     toast.error(t('models.wizard.verifyFail') + ': ' + String(e))
   } finally {
     isLoading.value = false
@@ -108,13 +162,38 @@ const handleVerify = async () => {
 }
 
 const handleFinish = () => {
-  // Update with selected model
-  if (selectedModel.value) {
-    modelStore.updateConfig(currentId.value, {
-      model: selectedModel.value
+  if (!provider.value) return
+  const p = providers.find(item => item.name === provider.value)!
+
+  const chosen = [...selectedModels.value]
+  // Skip duplicates: a config with the same baseUrl + model already exists
+  const toAdd = chosen.filter(m => !modelStore.configs.some(c => c.baseUrl === p.url && c.model === m))
+  const skipped = chosen.length - toAdd.length
+
+  const createdIds = toAdd.map(m => {
+    const id = nanoid(6)
+    modelStore.addConfig({
+      id,
+      baseUrl: p.url,
+      apiKey: apiKey.value,
+      model: m
     })
-    // Save again
+    return id
+  })
+
+  // Always remove the temporary config used for verification
+  if (modelStore.getById(currentId.value)) {
+    modelStore.removeConfig(currentId.value)
+  }
+
+  if (toAdd.length > 0) {
+    // Save again so the backend can read all new configs immediately
     modelStore.saveNow()
+    emit('added', createdIds)
+    toast.success(t('models.wizard.added', { count: toAdd.length }))
+  }
+  if (skipped > 0) {
+    toast.info(t('models.wizard.skipped', { count: skipped }))
   }
   isOpen.value = false
 }
@@ -192,23 +271,31 @@ const openProviderUrl = () => {
         <div class="grid gap-2" v-if="models.length > 0">
           <Label>
             <Box class="size-4" />
-            {{ t('models.wizard.selectModel') }}
+            {{ t('models.wizard.selectModels') }}
           </Label>
-          <Select v-model="selectedModel">
-            <SelectTrigger>
-              <SelectValue :placeholder="t('models.wizard.selectModel')" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="m in models" :key="m" :value="m">
-                {{ m }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <Input v-model="modelFilter" :placeholder="t('models.wizard.searchModels')" />
+          <div class="flex items-center justify-between text-sm text-muted-foreground">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <Checkbox :model-value="allFilteredSelected" @update:model-value="toggleSelectAll" />
+              {{ t('models.wizard.selectAll') }}
+            </label>
+            <span>{{ t('models.wizard.selectedCount', selectedCount) }}</span>
+          </div>
+          <div class="max-h-60 overflow-y-auto rounded-md border p-2 grid gap-1">
+            <label v-for="m in filteredModels" :key="m"
+              class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm">
+              <Checkbox :model-value="selectedModels.has(m)" @update:model-value="onModelToggle(m, $event)" />
+              <span class="truncate">{{ m }}</span>
+            </label>
+            <div v-if="filteredModels.length === 0" class="text-sm text-muted-foreground p-2">
+              {{ t('models.wizard.noModelResults') }}
+            </div>
+          </div>
         </div>
       </div>
 
       <DialogFooter>
-        <Button @click="handleFinish" :disabled="!provider || !apiKey">
+        <Button @click="handleFinish" :disabled="!provider || !apiKey || selectedCount === 0">
           {{ t('models.wizard.finish') }}
         </Button>
       </DialogFooter>
