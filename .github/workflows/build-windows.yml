@@ -37,13 +37,16 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build Windows installers
-        uses: tauri-apps/tauri-action@v1
-        with:
-          # Our tauri.conf.json also lists macOS-only targets (dmg/app), so restrict bundles here
-          args: --bundles nsis,msi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # tauri.conf.json sets createUpdaterArtifacts: true together with the project's
+      # updater public key. Without the matching private key the bundling fails after
+      # the installers have been produced, and these CI installers are not distributed
+      # through the in-app updater, so updater artifacts are disabled for this build.
+      - name: Disable updater artifacts for CI build
+        shell: bash
+        run: pnpm exec node -e "const fs=require('fs');const f='src-tauri/tauri.conf.json';const c=JSON.parse(fs.readFileSync(f,'utf8'));c.bundle.createUpdaterArtifacts=false;fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n')"
+
+      - name: Build NSIS/MSI installers
+        run: pnpm tauri build --bundles nsis,msi
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
